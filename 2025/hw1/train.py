@@ -1,5 +1,5 @@
 """
-Student Name:
+Student Name: Zitong Yang
 
 CS375 / Psych 279 Homework 1
 
@@ -40,10 +40,59 @@ sns.set_theme(style="whitegrid")
 class AlexNet(nn.Module):
     def __init__(self, num_classes: int = 1000, dropout: float = 0.5) -> None:
         super().__init__()
-        ### TODO: Implement the AlexNet model as described in the assignment
+        
+        # Feature extraction layers
+        self.features = nn.Sequential(
+            # Conv1
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+
+            # Conv2
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            
+            # Conv3
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            
+            # Conv4
+            nn.Conv2d(384, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            
+            # Conv5
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+        )
+
+        # Classifier layers
+        self.classifier = nn.Sequential(
+            # FC6
+            nn.Dropout(p=dropout),
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            
+            # FC7
+            nn.Dropout(p=dropout),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            
+            # FC8
+            nn.Linear(4096, num_classes),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # TODO: Implement the forward pass of the AlexNet model
+        # Pass through convolutional layers
+        x = self.features(x)
+        
+        # Flatten
+        x = torch.flatten(x, 1)
+        
+        # Pass through fully connected layers
+        x = self.classifier(x)
+        
         return x
 
 
@@ -68,8 +117,35 @@ def evaluate_accuracy_and_loss(
         - accuracy: float, the top-1 accuracy of the model on the data_loader
         - loss: float, the average loss of the model on the data_loader
     """
-    ### TODO: Implement the evaluation function that computes the top-1 accuracy and loss
-    return
+    model.eval()  # Set model to evaluation mode
+    criterion = nn.CrossEntropyLoss()
+    total_correct = 0
+    total_samples = 0
+    running_loss = 0.0
+
+    with torch.no_grad():  # Disable gradient calculations
+        for images, labels in data_loader:
+            images, labels = images.to(device), labels.to(device)
+            
+            # Forward pass
+            outputs = model(images)
+            
+            # Compute loss
+            loss = criterion(outputs, labels)
+            running_loss += loss.item() * images.size(0)
+            
+            # Get predictions
+            _, predicted = torch.max(outputs.data, 1)
+            
+            # Update metrics
+            total_samples += labels.size(0)
+            total_correct += (predicted == labels).sum().item()
+
+    # Calculate final metrics
+    accuracy = (total_correct / total_samples) * 100.0  # Convert to percentage
+    avg_loss = running_loss / total_samples
+
+    return accuracy, avg_loss
 
 def plot_conv1_kernels(model: torch.nn.Module, epoch: int):
     """
@@ -79,7 +155,29 @@ def plot_conv1_kernels(model: torch.nn.Module, epoch: int):
         - model: torch.nn.Module, the AlexNet model
         - epoch: int, the current training epoch
     """
-    ### TODO: Implement the function to plot the Conv1 kernels
+    # Get the weights from the first conv layer
+    conv1_weights = model.features[0].weight.data.cpu()
+
+    # Normalize the weights for better visualization
+    min_val = conv1_weights.min()
+    max_val = conv1_weights.max()
+    conv1_weights = (conv1_weights - min_val) / (max_val - min_val)
+
+    # Create a grid of the kernels
+    kernel_grid = torchvision.utils.make_grid(conv1_weights, nrow=8, padding=2, normalize=False)
+
+    # Convert to numpy for matplotlib
+    kernel_grid = kernel_grid.numpy().transpose((1, 2, 0))
+
+    # Create figure and plot
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.imshow(kernel_grid)
+    ax.axis('off')
+    ax.set_title(f'Conv1 Kernels (Epoch {epoch})')
+
+    # Save the figure
+    fig.savefig(os.path.join('out', f'conv1_kernels_epoch_{epoch}.png'))
+    plt.close(fig)
 
 def compute_circular_variance(angles_deg, responses):
     """
@@ -218,14 +316,58 @@ def plot_sine_grating_responses_for_filters(
         if len(responses_per_kernel[k]) == 0:
             continue
 
-        ### TODO: 
-        # For each kernel:
-        #   - Compute the circular variance and append it to circular_variances
-        #   - Plot the response vs deg
-        #   - Plot the response vs sf
-        #   - Visualize the kernel
-        #   - Save the figure to out_dir
-        # Repeat for each kernel
+        # Sort responses by degree and spatial frequency
+        responses = responses_per_kernel[k]
+        responses.sort()  # Sort by degree (first element of tuple)
+        
+        # Extract separate lists for plotting
+        degrees = [r[0] for r in responses]
+        sfs = [r[1] for r in responses]
+        resp_values = [r[2] for r in responses]
+
+        # Compute circular variance
+        cv = compute_circular_variance(degrees, resp_values)
+        circular_variances.append(cv)
+
+        # Create figure with 3 subplots
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+
+        # Plot 1: Response vs Orientation
+        unique_degrees = sorted(list(set(degrees)))
+        degree_responses = {deg: [] for deg in unique_degrees}
+        for d, _, r in responses:
+            degree_responses[d].append(r)
+        mean_responses = [np.mean(degree_responses[d]) for d in unique_degrees]
+        ax1.plot(unique_degrees, mean_responses, 'b-')
+        ax1.set_xlabel('Orientation (degrees)')
+        ax1.set_ylabel('Response')
+        ax1.set_title('Response vs Orientation')
+
+        # Plot 2: Response vs Spatial Frequency
+        unique_sfs = sorted(list(set(sfs)))
+        sf_responses = {sf: [] for sf in unique_sfs}
+        for _, sf, r in responses:
+            sf_responses[sf].append(r)
+        mean_sf_responses = [np.mean(sf_responses[sf]) for sf in unique_sfs]
+        ax2.plot(unique_sfs, mean_sf_responses, 'r-')
+        ax2.set_xlabel('Spatial Frequency')
+        ax2.set_ylabel('Response')
+        ax2.set_title('Response vs Spatial Frequency')
+
+        # Plot 3: Kernel Visualization
+        kernel_weights = conv1.weight[k].detach().cpu()
+        kernel_grid = torchvision.utils.make_grid(kernel_weights.unsqueeze(1), normalize=True)
+        ax3.imshow(kernel_grid.permute(1, 2, 0))
+        ax3.axis('off')
+        ax3.set_title('Kernel Weights')
+
+        # Set overall title with circular variance
+        fig.suptitle(f'Kernel {k} (CV: {cv:.3f})')
+        plt.tight_layout()
+        
+        # Save figure
+        fig.savefig(os.path.join(out_dir, f'kernel_{k}_responses.png'))
+        plt.close(fig)
 
     # Plot histogram of circular variances for all kernels at the given epoch
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -294,7 +436,7 @@ def main():
         cudnn.benchmark = True  # Enable cuDNN auto-tuner
     
     # Data directory (ImageNet structure assumed)
-    data_dir = None ### TODO: Set the path to the ImageNet dataset
+    data_dir = 'imagenet-mini' ### TODO: Set the path to the ImageNet dataset
     
     # ---------------------------
     # 2. Data Preparation
@@ -407,19 +549,23 @@ def main():
 
         model.train()
         running_train_loss = 0.0
+        criterion = nn.CrossEntropyLoss()
 
         for images, labels in tqdm(train_loader, desc=f"Epoch {epoch}/{total_epochs} (Train)"):
             images, labels = images.to(device), labels.to(device)
             
             optimizer.zero_grad()
 
-            ### TODO: Implement the 
-            #   - forward pass
-            #   - loss computation
-            #   - backward pass
-            #   - and optimizer step
-            loss = 0.0 # Placeholder loss, replace with actual loss computation
-
+            # Forward pass
+            outputs = model(images)
+            
+            # Compute loss
+            loss = criterion(outputs, labels)
+            
+            # Backward pass
+            loss.backward()
+            
+            # Optimizer step
             optimizer.step()
             
             # Accumulate training loss
