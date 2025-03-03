@@ -256,7 +256,7 @@ def plot_sine_grating_responses_for_filters(
     """
 
     # Where to save the plots for this epoch
-    out_dir = f"out/kernel_responses_{epoch:02d}"
+    out_dir = f"out/imagenet_kernel_responses_{epoch:02d}"
     os.makedirs(out_dir, exist_ok=True)
 
     # We'll use a simple transform to match the input size expected by AlexNet
@@ -505,7 +505,7 @@ def main():
     circular_variances = []
 
     # Check if there's an existing checkpoint we can load
-    checkpoint_path = "out/model.pt"
+    checkpoint_path = "out/imagenet.pt"
     start_epoch = 1
     if os.path.isfile(checkpoint_path):
         print(f"Found checkpoint {checkpoint_path}. Resuming training...")
@@ -530,12 +530,12 @@ def main():
         test_accuracy, test_loss = evaluate_accuracy_and_loss(model, test_loader, device)
         test_acc_history.append(test_accuracy)
 
-        # Compute circular variance of initial kernel responses
-        curr_circular_variances = plot_sine_grating_responses_for_filters(model, 0, device)
-        circular_variances.append(curr_circular_variances)
+        # # Compute circular variance of initial kernel responses
+        # curr_circular_variances = plot_sine_grating_responses_for_filters(model, 0, device)
+        # circular_variances.append(curr_circular_variances)
 
-        # Compute and save the initial kernel filters
-        plot_conv1_kernels(model, 0)
+        # # Compute and save the initial kernel filters
+        # plot_conv1_kernels(model, 0)
 
 
     # ---------------------------
@@ -591,39 +591,39 @@ def main():
         # 5. Save Metrics And Visualizations
         # ---------------------------
 
-        # After each epoch, we can call the function to save kernel responses and grab
-        # the list of circular variances for each kernel
-        curr_circular_variances = plot_sine_grating_responses_for_filters(model, epoch, device)
-        circular_variances.append(curr_circular_variances)
+        # # After each epoch, we can call the function to save kernel responses and grab
+        # # the list of circular variances for each kernel
+        # curr_circular_variances = plot_sine_grating_responses_for_filters(model, epoch, device)
+        # circular_variances.append(curr_circular_variances)
 
-        # We can also plot the kernel filters
-        plot_conv1_kernels(model, epoch)
+        # # We can also plot the kernel filters
+        # plot_conv1_kernels(model, epoch)
 
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+        # fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
 
-        # Loss plot
-        ax1.plot(range(1, epoch + 1), train_losses, label='Train Loss')
-        ax1.plot(range(1, epoch + 1), test_losses, label='Test Loss')
-        ax1.set_xlabel('Epoch')
-        ax1.set_ylabel('Loss')
-        ax1.set_title('Train & Test Loss')
-        ax1.legend()
+        # # Loss plot
+        # ax1.plot(range(1, epoch + 1), train_losses, label='Train Loss')
+        # ax1.plot(range(1, epoch + 1), test_losses, label='Test Loss')
+        # ax1.set_xlabel('Epoch')
+        # ax1.set_ylabel('Loss')
+        # ax1.set_title('Train & Test Loss')
+        # ax1.legend()
 
-        # Accuracy plot
-        ax2.plot(range(0, epoch + 1), test_acc_history, label='Test Accuracy')
-        ax2.set_xlabel('Epoch')
-        ax2.set_ylabel('Accuracy (%)')
-        ax2.set_title('Test Accuracy')
-        ax2.legend()
+        # # Accuracy plot
+        # ax2.plot(range(0, epoch + 1), test_acc_history, label='Test Accuracy')
+        # ax2.set_xlabel('Epoch')
+        # ax2.set_ylabel('Accuracy (%)')
+        # ax2.set_title('Test Accuracy')
+        # ax2.legend()
 
-        # Plot the circular variances of each kernel as a line plot over epochs
-        # all on the same plot axis (ax3)
-        for k in range(len(curr_circular_variances)):
-            ax3.plot(range(0, epoch + 1), [cv[k] for cv in circular_variances], label=f"Kernel {k}")
+        # # Plot the circular variances of each kernel as a line plot over epochs
+        # # all on the same plot axis (ax3)
+        # for k in range(len(curr_circular_variances)):
+        #     ax3.plot(range(0, epoch + 1), [cv[k] for cv in circular_variances], label=f"Kernel {k}")
 
-        plt.tight_layout()
-        plt.savefig("out/training_metrics.png")
-        plt.close(fig)
+        # plt.tight_layout()
+        # plt.savefig("out/imagenet_training_metrics.png")
+        # plt.close(fig)
 
 
         # Save the model checkpoint with epoch/loss/accuracy
@@ -636,7 +636,7 @@ def main():
             'test_acc_history': test_acc_history,
             'circular_variances': circular_variances,
         }
-        torch.save(checkpoint_dict, "out/model.pt")  # Overwrite/update main checkpoint
+        torch.save(checkpoint_dict, "out/imagenet.pt")  # Overwrite/update main checkpoint
 
     print("Training complete. Kernels, training metrics, and sine-grating responses have been saved to the 'out/' folder.")
 

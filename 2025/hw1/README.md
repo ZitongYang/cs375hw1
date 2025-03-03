@@ -97,9 +97,9 @@ For this assignment, you will use the **ImageNet** dataset. **ImageNet** is larg
 - [ImageNet Homepage](http://www.image-net.org/)  
 - Follow their instructions to create an account and request access to the Large Scale Visual Recognition Challenge (ILSVRC) 2012 dataset.  
 - Once you have the files (`ILSVRC2012_devkit_t12.tar.gz`, `ILSVRC2012_img_train.tar` and `ILSVRC2012_img_val.tar`) place them in a directory and set it as the dataset path inside `train.py`.
-
+). This should require no more than 50GB in total (including the temporary scratch space you need to unzip the files). While we still strongly encourage you to use the full dataset for a more authentic experience, we will allow submissions with this re
 **UPDATE:**
-Due to storage concerns, we have prepared a 10% subset of the full ImageNet dataset which you can find [here](https://storage.cloud.google.com/cs375/imagenet-mini.zip). This should require no more than 50GB in total (including the temporary scratch space you need to unzip the files). While we still strongly encourage you to use the full dataset for a more authentic experience, we will allow submissions with this reduced dataset.
+Due to storage concerns, we have prepared a 10% subset of the full ImageNet dataset which you can find [here](https://storage.cloud.google.com/cs375/imagenet-mini.zipduced dataset.
 
 ### 2. Sine Grating Images
 

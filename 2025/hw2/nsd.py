@@ -4,8 +4,6 @@
 
 import os
 from os.path import exists
-import glob
-import re
 
 import numpy as np
 import pandas as pd
@@ -13,7 +11,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from PIL import Image
-import xarray as xr
 
 import torch
 import torch.nn as nn
@@ -37,21 +34,28 @@ NCSNR_THRESHOLD = 0.2
 
 def r2_over_nc(y, y_pred, ncsnr):
     """
-    Compute the R^2 score normalized by the noise ceiling (NC) as in Finzi et al (2022).
+    Compute R² score normalized by noise ceiling.
     The noise ceiling is computed as:
          NC = ncsnr^2 / (ncsnr^2 + 1/num_trials)
     If ncsnr is None, return the standard R^2.
     """
-    ### TODO: Replace the code below with your implementation.
-    # Instructions:
-    # 1. If ncsnr is None, compute and return the standard R^2 score using
-    #    r2_score_sklearn (with multioutput="raw_values").
-    # 2. Otherwise, assume there are 3 target trials (i.e. set num_trials = 3.0).
-    # 3. Compute the noise ceiling (NC) using the formula:
-    #       NC = (ncsnr ** 2) / ( (ncsnr ** 2) + (1.0 / num_trials) )
-    # 4. Compute the standard R^2 score (using r2_score_sklearn) and then
-    #    return the normalized R^2 score by dividing the R^2 score by NC.
-    pass
+    # If ncsnr is None, compute and return standard R² score
+    if ncsnr is None:
+        return r2_score_sklearn(y, y_pred, multioutput="raw_values")
+    
+    # Number of target trials
+    num_trials = 3.0
+    
+    # Compute noise ceiling (NC)
+    NC = (ncsnr ** 2) / ((ncsnr ** 2) + (1.0 / num_trials))
+    
+    # Compute standard R² score
+    r2 = r2_score_sklearn(y, y_pred, multioutput="raw_values")
+    
+    # Normalize R² by noise ceiling
+    normalized_r2 = r2 / NC
+    
+    return normalized_r2
 
 
 def get_metadata_concat_hemi(Y):
@@ -241,21 +245,97 @@ preprocess = transforms.Compose([
 # 6. DEFINE MODIFIED ALEXNET MODEL      #
 #########################################
 
-### TODO: Implement a modified version of the AlexNet model.
-# Instructions:
-# 1. Define a class called AlexNet that inherits from nn.Module.
-# 2. Implement AlexNet as in HW1
-# 3. In the forward method:
-#    - Pass the input through the convolutional feature extractor.
-#    - After each MaxPool2d layer in the features, flatten the output and store it in a dictionary with a key indicating the layer number (e.g., "conv_pool_after_layer_X").
-#    - After processing the convolutional layers, apply the adaptive average pooling and flatten the result.
-#    - Pass the flattened tensor through the classifier.
-#    - Capture the activations from the first fully-connected layer ("fc1") and the second fully-connected layer ("fc2") and store them in the dictionary.
-#    - Return the dictionary containing all the captured features.
-#
-# Note: Do not capture the final output of the network; only capture the intermediate features as specified.
 class AlexNet(nn.Module):
-    pass
+    def __init__(self, num_classes: int = 1000, dropout: float = 0.5) -> None:
+        super().__init__()
+        
+        # Feature extraction layers - convolutional part of AlexNet
+        self.features = nn.Sequential(
+            # Conv1
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),  # Capture after this (layer 2)
+            
+            # Conv2
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),  # Capture after this (layer 5)
+            
+            # Conv3
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            
+            # Conv4 - Changed from (384, 256) to (384, 384) to match trained models
+            nn.Conv2d(384, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            
+            # Conv5 - Changed from (256, 256) to (384, 256) to match trained models
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),  # Capture after this (layer 12)
+        )
+        
+        # Adaptive pooling for variable input sizes
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
+        
+        # Classifier network with fully connected layers
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=dropout),
+            nn.Linear(256 * 6 * 6, 4096),  # First FC layer (fc1) - capture this
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=dropout),
+            nn.Linear(4096, 4096),  # Second FC layer (fc2) - capture this
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, num_classes),  # Output layer
+        )
+
+    def forward(self, x: torch.Tensor) -> dict:
+        # Dictionary to store intermediate activations
+        features = {}
+        
+        # Process through convolutional layers and capture outputs at key points
+        # Layer 1-2: Conv1 + ReLU + MaxPool
+        x = self.features[0](x)  # Conv1
+        x = self.features[1](x)  # ReLU
+        x = self.features[2](x)  # MaxPool
+        features["conv_pool_after_layer2"] = torch.flatten(x, 1)
+        
+        # Layer 3-5: Conv2 + ReLU + MaxPool
+        x = self.features[3](x)  # Conv2
+        x = self.features[4](x)  # ReLU
+        x = self.features[5](x)  # MaxPool
+        features["conv_pool_after_layer_5"] = torch.flatten(x, 1)
+        
+        # Layer 6-12: Conv3, Conv4, Conv5 + ReLUs + MaxPool
+        x = self.features[6](x)  # Conv3
+        x = self.features[7](x)  # ReLU
+        x = self.features[8](x)  # Conv4
+        x = self.features[9](x)  # ReLU
+        x = self.features[10](x)  # Conv5
+        x = self.features[11](x)  # ReLU
+        x = self.features[12](x)  # MaxPool
+        features["conv_pool_after_layer_12"] = torch.flatten(x, 1)
+        
+        # Apply adaptive pooling and flatten for fully connected layers
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        
+        # First fully connected layer (fc1)
+        x = self.classifier[0](x)  # Dropout
+        x = self.classifier[1](x)  # Linear (fc1)
+        features["fc1"] = x.clone()
+        x = self.classifier[2](x)  # ReLU
+        
+        # Second fully connected layer (fc2)
+        x = self.classifier[3](x)  # Dropout
+        x = self.classifier[4](x)  # Linear (fc2)
+        features["fc2"] = x.clone()
+        x = self.classifier[5](x)  # ReLU
+        
+        # Final output layer
+        x = self.classifier[6](x)  # Final Linear layer
+        
+        return features
 
 
 #########################################
@@ -271,16 +351,15 @@ model_random.eval()
 
 # Model loaded from an ImageNet checkpoint.
 model_loaded = AlexNet().to(device)
-### TODO: Replace the placeholder with the actual path to the ImageNet checkpoint.
-checkpoint = torch.load("path/to/imagenet_checkpoint.pth",
-                         map_location=device)
+# TODO: Replace the placeholder with the actual path
+checkpoint = torch.load("out/imagenet.pt", map_location=device)
 model_loaded.load_state_dict(checkpoint['model_state_dict'])
 model_loaded.eval()
 
 # Model loaded from a barcode checkpoint.
 model_barcode = AlexNet(num_classes=32).to(device)
-### TODO: Replace the placeholder with the actual path to the barcode checkpoint.
-checkpoint = torch.load("path/to/barcode_checkpoint.pth", map_location=device)
+# TODO: Replace the placeholder with the actual path
+checkpoint = torch.load("out/barcode.pt", map_location=device)
 model_barcode.load_state_dict(checkpoint['model_state_dict'])
 model_barcode.eval()
 
@@ -341,13 +420,14 @@ brain_areas = list(train_fmri_data.keys())
 # Define the desired order for brain areas on the x-axis.
 desired_areas_order = ["V1", "V2", "V3", "V4", "ventral", "parietal", "lateral"]
 
-# For each model, compute activations, fit Ridge regression, and compute normalized R2 scores.
+# For each model, compute activations, fit Ridge regression, and compute normalized R2 scores
 for model_name, model_instance in models.items():
     print(f"\nProcessing model: {model_name}")
+    # Extract features for train and test sets
     features_train = get_model_activations(model_instance, train_image_data, batch_size=32)
-    features_test  = get_model_activations(model_instance, test_image_data, batch_size=32)
+    features_test = get_model_activations(model_instance, test_image_data, batch_size=32)
     
-    # Initialize dictionary to hold scores (rows: layers, columns: brain areas).
+    # Initialize dictionary to hold scores (rows: layers, columns: brain areas)
     scores = {layer: {} for layer in desired_layers}
     
     for layer in desired_layers:
@@ -356,36 +436,57 @@ for model_name, model_instance in models.items():
             continue
         
         X_train = features_train[layer]  # (n_train, feature_dim)
-        X_test  = features_test[layer]   # (n_test, feature_dim)
+        X_test = features_test[layer]   # (n_test, feature_dim)
         print(f"Layer {layer}: train features {X_train.shape}, test features {X_test.shape}")
         
         for area in brain_areas:
-
-            ### TODO: Implement Ridge regression and compute normalized R2 scores for this brain area.
-            # Instructions:
-            # 1. Extract the fMRI responses for training (y_train) and testing (y_test) for the current brain area
-            #    from train_fmri_data and test_fmri_data respectively.
-            # 2. Retrieve the noise ceiling values (ncsnr) for the test set.
-            # 3. Create a RidgeCV model using sklearn.linear_model.RidgeCV with a list of alphas.
-            #    Suggested alphas: [1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 0.1, 1, 10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e7].
-            # 4. Fit the Ridge regression model on X_train and y_train.
-            # 5. Use the fitted model to predict responses (y_pred) on X_test.
-            # 6. Print the optimal alpha selected and the R2 score on the test set.
-            # 7. Compute the normalized R2 scores using the provided r2_over_nc function.
-            # 8. Compute the average normalized R2 score across all voxels and store it in the scores dictionary.
-            pass
+            # 1. Extract fMRI responses for this brain area
+            y_train = train_fmri_data[area]["responses"]
+            y_test = test_fmri_data[area]["responses"]
+            
+            # 2. Get noise ceiling values for normalization
+            ncsnr = test_fmri_data[area]["ncsnr"]
+            
+            # 3. Check sample consistency
+            if X_train.shape[0] != y_train.shape[0] or X_test.shape[0] != y_test.shape[0]:
+                print(f"Warning: Sample count mismatch for {area}. X_train: {X_train.shape[0]}, y_train: {y_train.shape[0]}, X_test: {X_test.shape[0]}, y_test: {y_test.shape[0]}. Skipping...")
+                continue
+            
+            # 4. Ridge Regression with cross-validation
+            # Create a list of candidate alphas for RidgeCV
+            alphas = [1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 0.1, 1, 10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8]
+            
+            # Create and fit RidgeCV model
+            ridge_model = RidgeCV(alphas=alphas, store_cv_values=True)
+            ridge_model.fit(X_train, y_train)
+            
+            # Get predictions on test data
+            y_pred = ridge_model.predict(X_test)
+            
+            # Report optimal alpha and standard R² score
+            print(f"  Area {area}: Optimal alpha = {ridge_model.alpha_}")
+            r2 = r2_score_sklearn(y_test, y_pred, multioutput="raw_values")
+            print(f"  Area {area}: Standard R² score = {np.mean(r2):.4f}")
+            
+            # 5. Compute normalized R² score using noise ceiling
+            norm_r2 = r2_over_nc(y_test, y_pred, ncsnr)
+            
+            # 6. Store average normalized R² score across all voxels
+            scores[layer][area] = np.mean(norm_r2)
+            print(f"  Area {area}: Normalized R² score = {scores[layer][area]:.4f}")
     
-    # Convert scores to a DataFrame (rows: layers, columns: brain areas).
+    # 7. Final aggregation and visualization
+    # Convert scores dictionary to DataFrame for visualization
     df_scores = pd.DataFrame(scores).T
-
-    # Reorder the columns to the desired order.
+    
+    # Reorder columns to the desired order
     df_scores = df_scores[desired_areas_order]
     model_results[model_name] = df_scores
     
-    # Plot a heatmap of the scores.
+    # Plot heatmap of normalized R² scores
     plt.figure(figsize=(10, 6))
     sns.heatmap(df_scores, annot=True, cmap="viridis", fmt=".3f")
-    plt.title(f"Model Productivity (r2 over noise ceiling) - {model_name} model")
+    plt.title(f"Model Productivity (R² over noise ceiling) - {model_name}")
     plt.xlabel("Brain Area")
     plt.ylabel("Layer")
     plt.tight_layout()
